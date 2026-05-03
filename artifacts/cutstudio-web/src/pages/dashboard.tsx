@@ -185,7 +185,7 @@ export default function Dashboard() {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
-  const [isSimulatingPayment, setIsSimulatingPayment] = useState(false);
+
   const [paymentMethod, setPaymentMethod] = useState<string | null>("upi");
 
   const clientUsers = users.filter(u => u.role === "client");
@@ -245,17 +245,17 @@ export default function Dashboard() {
         },
         prefill: { name: currentUser?.name, email: currentUser?.email },
         theme: { color: "#e8a020" },
-        modal: { ondismiss: () => setIsSimulatingPayment(false) },
+        modal: { ondismiss: () => {} },
       });
       rzp.open();
     } else {
-      // Demo mode: simulate payment
-      setIsSimulatingPayment(true);
-      setTimeout(() => {
-        setIsSimulatingPayment(false);
-        setIsPaymentOpen(false);
-        if (selectedProject) handleMarkPaid(selectedProject);
-      }, 2400);
+      // Razorpay not configured or not loaded
+      toast({
+        variant: "destructive",
+        title: "Payment Error",
+        description: "Razorpay is not configured. Please contact support.",
+        className: "bg-[#0a0a16] border-[#ff3b5c] text-white",
+      });
     }
   };
 
@@ -591,19 +591,7 @@ export default function Dashboard() {
             <DialogHeader className="mb-5">
               <DialogTitle className="font-display text-3xl">Pay Securely</DialogTitle>
             </DialogHeader>
-            {isSimulatingPayment ? (
-              <div className="py-12 flex flex-col items-center gap-5">
-                <div className="relative w-16 h-16">
-                  <div className="absolute inset-0 rounded-full border-4 border-[#e8a020]/20 border-t-[#e8a020] animate-spin" />
-                  <div className="absolute inset-2 rounded-full border-2 border-[#00e5dc]/20 border-t-[#00e5dc] animate-spin" style={{ animationDirection: "reverse", animationDuration: "0.8s" }} />
-                </div>
-                <div className="text-center">
-                  <p className="text-white font-semibold mb-1">Processing payment…</p>
-                  <p className="text-[#606070] text-xs font-mono">Secured by 256-bit SSL</p>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4">
+            <div className="space-y-4">
                 <div className="bg-[#05050d] rounded-xl border border-[#1f1f2e] p-4 flex justify-between items-center">
                   <div>
                     <p className="text-[#606070] text-xs uppercase tracking-wider font-semibold mb-0.5">Amount Due</p>
@@ -642,7 +630,6 @@ export default function Dashboard() {
                   <Shield className="w-3 h-3" /> Secured by Razorpay · 256-bit SSL
                 </p>
               </div>
-            )}
           </div>
         </DialogContent>
       </Dialog>
