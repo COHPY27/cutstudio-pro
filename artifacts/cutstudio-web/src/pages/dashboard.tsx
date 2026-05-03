@@ -224,9 +224,10 @@ export default function Dashboard() {
   };
 
   const handlePayNow = () => {
-    const rzpKey = firebaseConfig?.razorpayKey;
+    // Always read from env var directly — firebaseConfig in localStorage may be stale
+    const rzpKey = import.meta.env.VITE_RAZORPAY_KEY || firebaseConfig?.razorpayKey;
     // Use real Razorpay if key is configured
-    if (isProductionMode && rzpKey && selectedProject && typeof window.Razorpay !== "undefined") {
+    if (rzpKey && selectedProject && typeof window.Razorpay !== "undefined") {
       const rzp = new window.Razorpay({
         key: rzpKey,
         amount: selectedProject.price * 100, // paise
@@ -269,7 +270,7 @@ export default function Dashboard() {
   if (!currentUser) return null;
 
   const isAdmin = currentUser.role === "admin";
-  const hasRazorpay = isProductionMode && !!firebaseConfig?.razorpayKey;
+  const hasRazorpay = !!(import.meta.env.VITE_RAZORPAY_KEY || firebaseConfig?.razorpayKey);
 
   return (
     <div className="min-h-screen bg-[#05050d] text-white pb-20">
