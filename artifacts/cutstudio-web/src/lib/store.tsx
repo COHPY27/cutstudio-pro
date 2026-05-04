@@ -7,7 +7,7 @@ export type Role = "admin" | "client";
 export interface User {
   uid: string;
   email: string;
-  password?: string;
+  password?: string; // Only for creation, never stored in Firestore!
   name: string;
   role: Role;
   phone?: string;
@@ -33,6 +33,7 @@ interface AppState {
   projects: Project[];
   isProductionMode: boolean;
   firebaseReady: boolean;
+  isLoading: boolean; // NEW: Track loading state
   firebaseConfig: FirebaseConfig;
 }
 
@@ -46,139 +47,254 @@ interface AppContextType extends AppState {
   deleteUser: (uid: string) => Promise<void>;
   setProductionMode: (isProd: boolean) => void;
   setFirebaseConfig: (config: FirebaseConfig) => void;
+  refreshData: () => Promise<void>; // NEW: Manual refresh
 }
 
-// ✏️ CHANGE THIS: Replace with your real admin email and password
-const defaultUsers: User[] = [
-  {
-    uid: "admin-001",
-    email: "admin@yourdomain.com",   // ← apni email yahan
-    password: "Change@Me123!",        // ← apna strong password yahan
-    name: "Admin",
-    role: "admin",
-  },
-];
+// ✏️ Default admin user (for seeding only)
+const defaultAdminUser: User = {
+  uid: "admin-001",
+  email: "admin@yourdomain.com",   // ← Change this
+  password: "Change@Me123!",        // ← Change this
+  name: "Admin",
+  role: "admin",
+};
 
-const LS_KEY = "cutstudio_state_v3"; // bumped to reset stale localStorage
+// ❌ REMOVED: const LS_KEY = "cutstudio_state_v3"; 
+// ❌ REMOVED: All localStorage logic
 
-const getInitialState = (): AppState => {
-  try {
-    const stored = localStorage.getItem(LS_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      return {
-        ...parsed,
-        // Always use fresh defaultUsers — never stale localStorage users
-        users: defaultUsers,
-        // Always load Firebase config from env vars (never from localStorage)
-        firebaseConfig: {
-          apiKey: import.meta.env.VITE_FIREBASE_API_KEY || parsed.firebaseConfig?.apiKey || "",
-          projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || parsed.firebaseConfig?.projectId || "",
-          razorpayKey: import.meta.env.VITE_RAZORPAY_KEY || parsed.firebaseConfig?.razorpayKey || "",
-        },
-        isProductionMode: true,
-      };
-    }
-  } catch {}
-  return {
+const AppContext = createContext<AppContextType | null>(null);
+
+export const AppProvider = ({ children }: { children: ReactNode }) => {
+  // ✅ Initial State: NO localStorage, fresh every time
+  const [state, setState] = useState<AppState>({
     currentUser: null,
-    users: defaultUsers,
-    projects: [],
+    users: [], // Start empty, load from Firebase
+    projects: [], // Start empty, load from Firebase
     isProductionMode: true,
     firebaseReady: false,
+    isLoading: true, // NEW: Show loading spinner initially
     firebaseConfig: {
       apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
       projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "",
       razorpayKey: import.meta.env.VITE_RAZORPAY_KEY || "",
     },
-  };
-};
+  });
 
-const AppContext = createContext<AppContextType | null>(null);
-
-export const AppProvider = ({ children }: { children: ReactNode }) => {
-  const [state, setState] = useState<AppState>(getInitialState);
   const { toast } = useToast();
 
-  // Persist to localStorage (but NOT firebase config — that comes from env)
-  useEffect(() => {
-    const { firebaseConfig, ...rest } = state;
-    localStorage.setItem(LS_KEY, JSON.stringify(rest));
-  }, [state]);
+  // ✅ REMOVED: localStorage persistence useEffect
+  // Data now lives ONLY in Firebase + React state (memory)
 
   const update = useCallback((updates: Partial<AppState>) => {
     setState(prev => ({ ...prev, ...updates }));
   }, []);
 
-  // Firebase: initialize and sync
+  // ✅ Firebase: Initialize and sync (MAIN DATA SOURCE)
   useEffect(() => {
     if (!state.firebaseConfig.apiKey || !state.firebaseConfig.projectId) {
-      update({ firebaseReady: false });
+      console.warn("⚠️ Firebase config missing");
+      update({ firebaseReady: false, isLoading: false });
       return;
     }
 
-    const ready = initFirebase(state.firebaseConfig);
-    if (!ready) {
-      toast({ variant: "destructive", title: "Firebase Error", description: "Check your API Key and Project ID.", className: "bg-[#0a0a16] border-[#ff3b5c] text-white" });
-      return;
-    }
+    let unsubUsers: (() => void) | undefined;
+    let unsubProjects: (() => void) | undefined;
 
-    const seedAndListen = async () => {
+    const initializeAndSync = async () => {
       try {
+        console.log("🔥 Initializing Firebase (NO localStorage)...");
+
+        // Initialize Firebase SDK
+        const ready = initFirebase(state.firebaseConfig);
+        if (!ready) {
+          throw new Error("Firebase initialization failed. Check API Key.");
+        }
+
+        // Check if collections exist and seed if needed
         const [fsUsers, fsProjects] = await Promise.all([
           fsGetAll<User>("users"),
           fsGetAll<Project>("projects"),
         ]);
 
-        if (fsUsers.length === 0) await fsBatchWrite("users", state.users);
-        if (fsProjects.length === 0 && state.projects.length > 0) await fsBatchWrite("projects", state.projects);
+        console.log(`📊 Found ${fsUsers.length} users, ${fsProjects.length} projects in Firestore`);
 
-        const usersToUse = fsUsers.length > 0 ? fsUsers : state.users;
-        const projectsToUse = fsProjects.length > 0 ? fsProjects : state.projects;
-        update({ users: usersToUse, projects: projectsToUse, firebaseReady: true });
+        // Seed default admin if no users exist (first time setup)
+        if (fsUsers.length === 0) {
+          console.log("🌱 Seeding default admin user...");
+          await fsSet("users", { ...defaultAdminUser, createdAt: new Date().toISOString() });
+        }
 
-        toast({ title: "🔥 Firebase Connected", description: "Data syncing in real-time.", className: "bg-[#0a0a16] border-[#00e5dc] text-white" });
+        // Use Firestore data (or empty arrays if first time)
+        const usersToUse = fsUsers.length > 0 ? fsUsers : [defaultAdminUser];
+        const projectsToUse = fsProjects.length > 0 ? fsProjects : [];
 
-        const unsubUsers = fsListen<User>("users", users => update({ users }));
-        const unsubProjects = fsListen<Project>("projects", projects => update({ projects }));
-        return () => { unsubUsers(); unsubProjects(); };
+        // Update state with Firebase data
+        update({ 
+          users: usersToUse, 
+          projects: projectsToUse, 
+          firebaseReady: true,
+          isLoading: false 
+        });
+
+        toast({ 
+          title: "🔥 Firebase Connected", 
+          description: `${usersToUse.length} users, ${projectsToUse.length} projects loaded`, 
+          className: "bg-[#0a0a16] border-[#00e5dc] text-white" 
+        });
+
+        // ✅ REAL-TIME LISTENERS: Keep data synced with Firestore
+        unsubUsers = fsListen<User>("users", (users) => {
+          console.log("👥 Users updated from Firestore:", users.length);
+          update({ users });
+        });
+
+        unsubProjects = fsListen<Project>("projects", (projects) => {
+          console.log("📹 Projects updated from Firestore:", projects.length);
+          update({ projects });
+        });
+
       } catch (e: any) {
-        toast({ variant: "destructive", title: "Firestore Error", description: e?.message || "Connection failed", className: "bg-[#0a0a16] border-[#ff3b5c] text-white" });
-        update({ firebaseReady: false });
+        console.error("❌ Firebase Error:", e);
+        
+        // Fallback: Use default admin in memory only (won't persist)
+        update({
+          users: [defaultAdminUser],
+          projects: [],
+          firebaseReady: false,
+          isLoading: false
+        });
+
+        toast({ 
+          variant: "destructive", 
+          title: "Firebase Connection Failed", 
+          description: e?.message || "Using demo mode. Data won't be saved.",
+          className: "bg-[#0a0a16] border-[#ff3b5c] text-white" 
+        });
       }
     };
 
-    let cleanup: (() => void) | undefined;
-    seedAndListen().then(fn => { cleanup = fn; });
-    return () => cleanup?.();
+    initializeAndSync();
+
+    // Cleanup listeners on unmount
+    return () => {
+      unsubUsers?.();
+      unsubProjects?.();
+      console.log("🧹 Cleaned up Firebase listeners");
+    };
   }, [state.firebaseConfig.apiKey, state.firebaseConfig.projectId]);
+
+  // ✅ NEW: Manual refresh function
+  const refreshData = async () => {
+    try {
+      update({ isLoading: true });
+      const [fsUsers, fsProjects] = await Promise.all([
+        fsGetAll<User>("users"),
+        fsGetAll<Project>("projects"),
+      ]);
+      update({ 
+        users: fsUsers, 
+        projects: fsProjects, 
+        isLoading: false 
+      });
+      toast({ title: "Data Refreshed ✓", className: "bg-[#0a0a16] border-[#00e57a] text-white" });
+    } catch (e) {
+      update({ isLoading: false });
+      toast({ variant: "destructive", title: "Refresh Failed", className: "bg-[#0a0a16] border-[#ff3b5c] text-white" });
+    }
+  };
 
   const value: AppContextType = {
     ...state,
-    login: user => update({ currentUser: user }),
-    logout: () => update({ currentUser: null }),
+    
+    // Auth functions (in-memory only, no localStorage)
+    login: (user) => {
+      console.log("✅ User logged in:", user.email);
+      update({ currentUser: user });
+    },
+    
+    logout: () => {
+      console.log("👋 User logged out (cleared memory)");
+      update({ currentUser: null });
+      // Note: No localStorage to clear! ✓
+    },
+
+    // ✅ CRUD Operations: Write to Firebase FIRST, then update local state
     addProject: async (project) => {
-      update({ projects: [project, ...state.projects] });
-      if (state.firebaseReady) await fsSet("projects", project);
+      try {
+        if (state.firebaseReady) {
+          await fsSet("projects", project); // Write to Firestore first
+          console.log("💾 Project saved to Firestore:", project.id);
+        }
+        // Update local state for immediate UI feedback
+        update({ projects: [project, ...state.projects] });
+        toast({ title: "Project Created ✓", className: "bg-[#0a0a16] border-[#00e57a] text-white" });
+      } catch (e) {
+        toast({ variant: "destructive", title: "Failed to save project", className: "bg-[#0a0a16] border-[#ff3b5c] text-white" });
+        throw e;
+      }
     },
+
     updateProject: async (project) => {
-      update({ projects: state.projects.map(p => p.id === project.id ? project : p) });
-      if (state.firebaseReady) await fsSet("projects", project);
+      try {
+        if (state.firebaseReady) {
+          await fsSet("projects", project); // Update in Firestore
+          console.log("✏️ Project updated in Firestore:", project.id);
+        }
+        update({ projects: state.projects.map(p => p.id === project.id ? project : p) });
+        toast({ title: "Project Updated ✓", className: "bg-[#0a0a16] border-[#00e57a] text-white" });
+      } catch (e) {
+        toast({ variant: "destructive", title: "Failed to update", className: "bg-[#0a0a16] border-[#ff3b5c] text-white" });
+        throw e;
+      }
     },
+
     deleteProject: async (id) => {
-      update({ projects: state.projects.filter(p => p.id !== id) });
-      if (state.firebaseReady) await fsDelete("projects", id);
+      try {
+        if (state.firebaseReady) {
+          await fsDelete("projects", id); // Delete from Firestore
+          console.log("🗑️ Project deleted from Firestore:", id);
+        }
+        update({ projects: state.projects.filter(p => p.id !== id) });
+        toast({ title: "Project Deleted ✓", className: "bg-[#0a0a16] border-[#00e57a] text-white" });
+      } catch (e) {
+        toast({ variant: "destructive", title: "Failed to delete", className: "bg-[#0a0a16] border-[#ff3b5c] text-white" });
+        throw e;
+      }
     },
+
     addUser: async (user) => {
-      update({ users: [...state.users, user] });
-      if (state.firebaseReady) await fsSet("users", user);
+      try {
+        if (state.firebaseReady) {
+          // Never store password in Firestore!
+          const { password, ...safeUserData } = user;
+          await fsSet("users", safeUserData); // Write to Firestore (without password)
+          console.log("👤 User saved to Firestore:", user.uid);
+        }
+        update({ users: [...state.users, user] }); // Keep password in memory only
+        toast({ title: "Client Added ✓", className: "bg-[#0a0a16] border-[#00e5dc] text-white" });
+      } catch (e) {
+        toast({ variant: "destructive", title: "Failed to add client", className: "bg-[#0a0a16] border-[#ff3b5c] text-white" });
+        throw e;
+      }
     },
+
     deleteUser: async (uid) => {
-      update({ users: state.users.filter(u => u.uid !== uid) });
-      if (state.firebaseReady) await fsDelete("users", uid);
+      try {
+        if (state.firebaseReady) {
+          await fsDelete("users", uid); // Delete from Firestore
+          console.log("🗑️ User deleted from Firestore:", uid);
+        }
+        update({ users: state.users.filter(u => u.uid !== uid) });
+        toast({ title: "Client Deleted ✓", className: "bg-[#0a0a16] border-[#00e57a] text-white" });
+      } catch (e) {
+        toast({ variant: "destructive", title: "Failed to delete", className: "bg-[#0a0a16] border-[#ff3b5c] text-white" });
+        throw e;
+      }
     },
+
     setProductionMode: (isProd) => update({ isProductionMode: isProd }),
     setFirebaseConfig: (config) => update({ firebaseConfig: config }),
+    refreshData, // NEW: Expose refresh function
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
