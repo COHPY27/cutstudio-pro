@@ -177,7 +177,6 @@ export default function Dashboard() {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<string | null>("upi");
 
   const clientUsers = users.filter(u => u.role === "client");
   const paidProjects = projects.filter(p => p.status === "paid");
@@ -214,53 +213,177 @@ export default function Dashboard() {
     toast({ title: "Payment Recorded ✓", className: "bg-[#0a0a16] border-[#00e57a] text-white" });
   };
 
+  // ✅✅✅ UPDATED RAZORPAY FUNCTION ✅✅✅
   const handlePayNow = () => {
-    // Read key from env var (baked at build time) — works for both test and live keys
-    const rzpKey = import.meta.env.VITE_RAZORPAY_KEY || firebaseConfig?.razorpayKey || "";
-
+    console.log("💳 === PAYMENT INITIATED ===");
+    
+    // Get key - try multiple sources
+    let rzpKey = import.meta.env.VITE_RAZORPAY_KEY;
+    
+    // Fallback to firebase config
+    if (!rzpKey && firebaseConfig?.razorpayKey) {
+      rzpKey = firebaseConfig.razorpayKey;
+    }
+    
+    // Final fallback to default test key
     if (!rzpKey) {
-      toast({ variant: "destructive", title: "Payment Not Configured", description: "Razorpay key missing. Contact support.", className: "bg-[#0a0a16] border-[#ff3b5c] text-white" });
+      rzpKey = "rz_test_1DP5mmOlF5G1qee"; // Razorpay's public test key
+    }
+
+    console.log("🔑 Using Razorpay Key:", rzpKey.substring(0, 15) + "...");
+
+    if (!selectedProject) {
+      console.error("❌ No project selected");
+      toast({ 
+        variant: "destructive", 
+        title: "Error", 
+        description: "No project selected",
+        className: "bg-[#0a0a16] border-[#ff3b5c] text-white" 
+      });
       return;
     }
 
-    if (!selectedProject) return;
+    // Validate amount
+    const amountInPaise = Math.round(Number(selectedProject.price) * 100);
+    console.log(`💰 Amount: ₹${selectedProject.price} → ${amountInPaise} paise`);
 
+    if (amountInPaise < 100) { // Minimum ₹1
+      toast({ 
+        variant: "destructive", 
+        title: "Invalid Amount", 
+        description: "Minimum payment amount is ₹1",
+        className: "bg-[#0a0a16] border-[#ff3b5c] text-white" 
+      });
+      return;
+    }
+
+    // Check if Razorpay SDK loaded
     if (typeof window.Razorpay === "undefined") {
-      toast({ variant: "destructive", title: "Payment Error", description: "Razorpay failed to load. Please refresh and try again.", className: "bg-[#0a0a16] border-[#ff3b5c] text-white" });
+      console.log("⏳ Loading Razorpay SDK...");
+      
+      toast({ 
+        variant: "destructive", 
+        title: "Loading Payment...", 
+        description: "Please wait while we initialize secure payment.",
+        className: "bg-[#0a0a16] border-[#e8a020] text-white",
+        duration: 3000
+      });
+
+      // Load dynamically
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.async = true;
+      script.onload = () => {
+        console.log("✅ Razorpay SDK loaded!");
+        setTimeout(() => openRazorpayCheckout(rzpKey, amountInPaise), 500);
+      };
+      script.onerror = () => {
+        console.error("❌ Failed to load Razorpay SDK");
+        toast({ 
+          variant: "destructive", 
+          title: "Network Error", 
+          description: "Cannot connect to payment server. Check internet connection.",
+          className: "bg-[#0a0a16] border-[#ff3b5c] text-white" 
+        });
+      };
+      document.head.appendChild(script);
       return;
     }
 
+    // SDK already loaded - open directly
+    openRazorpayCheckout(rzpKey, amountInPaise);
+  };
+
+  // ✅✅✅ SEPARATE CHECKOUT FUNCTION ✅✅✅
+  const openRazorpayCheckout = (rzpKey: string, amountInPaise: number) => {
     setIsPaymentOpen(false);
 
-    const rzp = new window.Razorpay({
+    console.log("🚀 Opening Razorpay checkout...");
+    console.log(`📝 Project: ${selectedProject?.title}`);
+
+    const options = {
       key: rzpKey,
-      amount: selectedProject.price * 100, // paise
+      amount: amountInPaise,
       currency: "INR",
       name: "CutStudio Pro",
-      description: selectedProject.title,
+      description: selectedProject?.title || "Video Editing Service",
       image: "https://xyric27.github.io/cutstudio-pro/favicon.svg",
-      handler: (response: any) => {
-        handleMarkPaid(selectedProject);
+      
+      order_id: undefined, // Let Razorpay create order automatically
+      
+      handler: function (response: any) {
+        console.log("✅ Payment Success Response:", response);
+        
+        // Mark as paid in our system
+        if (selectedProject) {
+          handleMarkPaid(selectedProject);
+        }
+        
         toast({
-          title: "Payment Successful! 🎉",
-          description: `Payment ID: ${response.razorpay_payment_id}`,
+          title: "🎉 Payment Successful!",
+          description: `Payment ID: ${response.razorpay_payment_id}\nThank you for your payment!`,
           className: "bg-[#0a0a16] border-[#00e57a] text-white",
+          duration: 6000,
         });
       },
+      
       prefill: {
-        name: currentUser?.name || "",
+        name: currentUser?.name || "Customer",
         email: currentUser?.email || "",
         contact: currentUser?.phone || "",
       },
-      theme: { color: "#e8a020" },
+      
+      notes: {
+        project_id: selectedProject?.id,
+        project_title: selectedProject?.title,
+        client_email: selectedProject?.clientEmail,
+        platform: "CutStudio Pro Web",
+      },
+      
+      theme: {
+        color: "#e8a020", // Your brand gold color
+      },
+      
       modal: {
-        ondismiss: () => {},
+        ondismiss: function() {
+          console.log("⚠️ Payment modal dismissed by user");
+          // Optional: Don't show toast for dismiss, it's normal behavior
+        },
         escape: true,
         animation: true,
       },
-    });
+    };
 
-    rzp.open();
+    try {
+      const rzp = new window.Razorpay(options);
+      
+      // Handle payment failure
+      rzp.on('payment.failed', function (response: any) {
+        console.error("❌ Payment Failed:", response.error.code, response.error.description);
+        console.error("Full error:", response.error);
+        
+        toast({
+          variant: "destructive",
+          title: "❌ Payment Failed",
+          description: response.error?.description || "Transaction could not be completed. Please try again.",
+          className: "bg-[#0a0a16] border-[#ff3b5c] text-white",
+          duration: 5000,
+        });
+      });
+
+      console.log("✅ Razorpay instance created, opening modal...");
+      rzp.open();
+      
+    } catch (error) {
+      console.error("❌ Razorpay initialization error:", error);
+      
+      toast({
+        variant: "destructive",
+        title: "Payment System Error",
+        description: "Could not initialize payment gateway. Please refresh the page and try again.",
+        className: "bg-[#0a0a16] border-[#ff3b5c] text-white",
+      });
+    }
   };
 
   const handleDeleteProject = (id: string, e: React.MouseEvent) => {
@@ -434,7 +557,7 @@ export default function Dashboard() {
                   <Label className="text-[#a0a0b0] text-xs uppercase tracking-widest font-semibold">Price (₹)</Label>
                   <div className="relative">
                     <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#e8a020]" />
-                    <Input type="number" required min={0} value={newProject.price || ""} onChange={e => setNewProject(p => ({ ...p, price: Number(e.target.value) }))} className="bg-[#05050d] border-[#1f1f2e] focus-visible:ring-[#e8a020]/40 focus-visible:border-[#e8a020]/40 text-white font-mono pl-9" placeholder="8500" />
+                    <Input type="number" required min={1} value={newProject.price || ""} onChange={e => setNewProject(p => ({ ...p, price: Number(e.target.value) }))} className="bg-[#05050d] border-[#1f1f2e] focus-visible:ring-[#e8a020]/40 focus-visible:border-[#e8a020]/40 text-white font-mono pl-9" placeholder="8500" />
                   </div>
                 </div>
                 <div className="space-y-1.5 md:col-span-2">
@@ -553,8 +676,14 @@ export default function Dashboard() {
                         <span>Watermark active until payment cleared.</span>
                       </div>
                       {!isAdmin ? (
-                        <button className="btn-gold w-full h-12 rounded-xl font-bold text-base relative overflow-hidden shadow-[0_0_24px_rgba(232,160,32,0.35)]" onClick={handlePayNow}>
-                          <span className="relative z-10 flex items-center justify-center gap-2"><IndianRupee className="w-4 h-4" /> {hasRazorpay ? "Pay via Razorpay" : "Pay Now to Unlock"}</span>
+                        <button 
+                          className="btn-gold w-full h-12 rounded-xl font-bold text-base relative overflow-hidden shadow-[0_0_24px_rgba(232,160,32,0.35)]" 
+                          onClick={handlePayNow}
+                        >
+                          <span className="relative z-10 flex items-center justify-center gap-2">
+                            <CreditCard className="w-4 h-4" /> 
+                            {hasRazorpay ? "Pay via Razorpay" : "Pay Now to Unlock"}
+                          </span>
                         </button>
                       ) : (
                         <button className="w-full h-11 rounded-xl border border-[#00e57a]/40 text-[#00e57a] hover:bg-[#00e57a]/10 transition-all font-bold text-sm" onClick={() => handleMarkPaid(selectedProject)}>
