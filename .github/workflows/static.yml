@@ -42,7 +42,8 @@ jobs:
       - name: Build
         env:
           PORT: "3000"
-          BASE_PATH: "/cutstudio-pro/"
+          # ✅ CHANGED: Empty string or remove entirely!
+          BASE_PATH: ""  
           NODE_ENV: production
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
