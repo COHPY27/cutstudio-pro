@@ -18,47 +18,41 @@ function ProtectedRoute({ component: Component, ...rest }: any) {
   return <Component {...rest} />;
 }
 
-function App() {
+// Yeh inner component banaya hai jo AppProvider ke andar hoga
+function AppContent() {
   const { currentUser, isLoading } = useApp();
 
-  // Agar app load ho rahi hai toh loading screen dikhao
   if (isLoading) {
-    return (
-      <AppProvider>
-        <TooltipProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <div className="noise-overlay" />
-            <div className="orb orb-1" />
-            <div className="orb orb-2" />
-            <div className="orb orb-3" />
-            <LoadingScreen />
-          </WouterRouter>
-          <Toaster />
-        </TooltipProvider>
-      </AppProvider>
-    );
+    return <LoadingScreen />;
   }
 
+  return (
+    <Switch>
+      <Route path="/">
+        {currentUser ? <Redirect to="/dashboard" /> : <Redirect to="/home" />}
+      </Route>
+      
+      <Route path="/home" component={Home} />
+      <Route path="/login" component={Login} />
+      <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} />} />
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+function App() {
   return (
     <AppProvider>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+          {/* Background effects */}
           <div className="noise-overlay" />
           <div className="orb orb-1" />
           <div className="orb orb-2" />
           <div className="orb orb-3" />
           
-          <Switch>
-            {/* Root URL par redirect karo based on login status */}
-            <Route path="/">
-              {currentUser ? <Redirect to="/dashboard" /> : <Redirect to="/home" />}
-            </Route>
-            
-            <Route path="/home" component={Home} />
-            <Route path="/login" component={Login} />
-            <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} />} />
-            <Route component={NotFound} />
-          </Switch>
+          {/* Yeh content ab AppProvider ke andar hai */}
+          <AppContent />
         </WouterRouter>
         <Toaster />
       </TooltipProvider>
