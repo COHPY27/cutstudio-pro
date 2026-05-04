@@ -59,7 +59,7 @@ const defaultUsers: User[] = [
   },
 ];
 
-const LS_KEY = "cutstudio_state_v2";
+const LS_KEY = "cutstudio_state_v3"; // bumped to reset stale localStorage
 
 const getInitialState = (): AppState => {
   try {
@@ -68,6 +68,8 @@ const getInitialState = (): AppState => {
       const parsed = JSON.parse(stored);
       return {
         ...parsed,
+        // Always use fresh defaultUsers — never stale localStorage users
+        users: defaultUsers,
         // Always load Firebase config from env vars (never from localStorage)
         firebaseConfig: {
           apiKey: import.meta.env.VITE_FIREBASE_API_KEY || parsed.firebaseConfig?.apiKey || "",
