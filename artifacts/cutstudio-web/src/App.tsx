@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
+import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppProvider, useApp } from "@/lib/store";
@@ -10,12 +10,13 @@ import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
 
 /**
- * Protected Route - Requires authentication
+ * ─── PROTECTED ROUTE ───
+ * Only shows component if user is logged in AND firebase is ready
  */
 function ProtectedRoute({ component: Component, ...rest }: any) {
   const { currentUser, isLoading, firebaseReady } = useApp();
   
-  // Still loading or Firebase not ready
+  // ⭐ CRITICAL: Wait for Firebase + data to load
   if (isLoading || !firebaseReady) {
     return <LoadingScreen />;
   }
@@ -25,30 +26,31 @@ function ProtectedRoute({ component: Component, ...rest }: any) {
     return <Redirect to="/login" />;
   }
   
-  // Authenticated → show component
+  // Authenticated → show the protected page
   return <Component {...rest} />;
 }
 
 /**
- * Main Application Router
- * Handles all routing scenarios including root URL
+ * ─── MAIN ROUTER COMPONENT ───
+ * Handles ALL routing scenarios intelligently
  */
 function AppRouter() {
   const { isLoading, isSetupMode, currentUser, firebaseReady } = useApp();
 
-  // ─── LOADING STATE ───
+  // ─── PHASE 1: LOADING STATE ───
+  // Show loading spinner until Firebase connects and data loads
   if (isLoading || !firebaseReady) {
     return <LoadingScreen />;
   }
 
-  // ─── SCENARIO A: SETUP MODE (No users exist yet) ───
+  // ─── PHASE 2: SETUP MODE (No users in Firestore yet) ───
   if (isSetupMode && !currentUser) {
     return (
       <Switch>
-        {/* Setup wizard page */}
+        {/* Setup wizard route */}
         <Route path="/setup" component={SetupWizard} />
         
-        {/* Home page still accessible */}
+        {/* Home page still accessible during setup */}
         <Route path="/home" component={Home} />
         
         {/* ⭐ ROOT URL + ALL OTHERS → Redirect to /setup */}
@@ -56,86 +58,95 @@ function AppRouter() {
           <Redirect to="/setup" />
         </Route>
         
-        {/* Catch unknown routes → also go to setup */}
+        {/* Catch-all: any unknown route → setup */}
         <Route component={() => <Redirect to="/setup" />} 
         />
       </Switch>
     );
   }
 
-  // ─── SCENARIO B: NORMAL MODE (Users exist) ───
+  // ─── PHASE 3: NORMAL MODE (Users exist in Firestore) ───
   return (
     <Switch>
       {/* PUBLIC PAGES */}
+      <Don't touch home page */}
       <Route path="/home" component={Home} />
       
-      {/* Login page - redirect if already logged in */}
+      {/* Login page - smart redirect if already logged in */}
       <Route 
         path="/login" 
         component={() => {
-          // If already logged in and visits /login, send to dashboard
+          // If user visits /login but is already logged in → send to dashboard
           if (currentUser) {
             return <Redirect to="/dashboard" />;
           }
+          // Otherwise show login form
           return <Login />;
         }} 
       />
       
-      {/* Setup page - redirect to login if not in setup mode */}
+      {/* Setup page - only accessible in setup mode */}
       <Route 
         path="/setup" 
         component={() => {
+          // If somehow accessing /setup when not in setup mode
           if (isSetupMode) {
             return <SetupWizard />;
           }
+          // Otherwise redirect to login
           return <Redirect to="/login" />;
         }} 
       />
 
-      {/* PROTECTED: Dashboard */}
+      {/* PROTECTED: Dashboard - requires auth */}
       <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} />} />
       
-      {/* ⭐⭐⭐ ROOT URL "/" - SMART REDIRECT ⭐⭐⭐ */}
+      {/* ⭐⭐⭐ ROOT URL "/" - THE MOST IMPORTANT ROUTE ⭐⭐⭐ */}
       <Route path="/">
         {(() => {
-          // Priority 1: If logged in → dashboard
+          // Smart redirect based on authentication state
+          
+          // Priority 1: User is logged in → go to dashboard
           if (currentUser) {
             return <Redirect to="/dashboard" />;
           }
           
-          // Priority 2: Not logged in → login page
+          // Priority 2: Not logged in → go to login
           return <Redirect to="/login" />;
+          
         })()}
       </Route>
 
-      {/* 404 Catch-All - Only for truly unknown paths */}
+      {/* 404 CATCH-ALL - Only for truly unknown paths like /xyz123 */}
       <Route component={NotFound} />
     </Switch>
   );
 }
 
 /**
- * Root App Component
+ * ─── ROOT APP COMPONENT ───
+ * Wraps everything with providers and renders router
  */
 function App() {
-  // Base path configuration
-  const basePath = ''; // Empty for relative paths on GitHub Pages
+  // Safe base path configuration for GitHub Pages
+  const basePath = ''; // Empty string = relative paths
   
   return (
     <AppProvider>
       <TooltipProvider>
+        {/* Wouter Router with base path */}
         <WouterRouter base={basePath}>
-          {/* Background decorative elements */}
+          {/* Decorative background effects */}
           <div className="noise-overlay" />
           <div className="orb orb-1" />
           <div className="orb orb-2" />
           <div className="orb orb-3" />
           
-          {/* Main application router */}
+          {/* Main application router with all logic */}
           <AppRouter />
         </WouterRouter>
         
-        {/* Global toast notifications */}
+        {/* Global toast notification system */}
         <Toaster />
       </TooltipProvider>
     </AppProvider>
