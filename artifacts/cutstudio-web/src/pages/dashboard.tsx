@@ -8,14 +8,13 @@ import {
   Trash2, AlertTriangle, Video, IndianRupee, ChevronRight,
   Zap, Shield, Users, TrendingUp, Clock,
   Wallet, Layers, ArrowUpRight,
-  ChevronDown, Check, Flame, Wifi, WifiOff
+  ChevronDown, Check, Flame, WifiOff
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 /* ─── HELPERS ─── */
@@ -111,20 +110,16 @@ function ProjectCard({ project, onClick, onDelete, isAdmin }: { project: Project
       className="group relative bg-[#0a0a16] border border-[#1f1f2e] rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 hover:border-[#e8a020]/30 hover:shadow-[0_0_30px_rgba(232,160,32,0.08)] hover:-translate-y-1"
       onClick={onClick}
     >
-      {/* Thumbnail */}
       <div className="relative aspect-video bg-[#080810] flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 thumbnail-gradient" />
-        {/* Center play button */}
         <div className="relative z-10 w-14 h-14 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center group-hover:scale-110 group-hover:bg-[#e8a020]/20 group-hover:border-[#e8a020]/40 transition-all duration-300 shadow-xl">
           <Play className="w-5 h-5 text-white fill-white ml-1" />
         </div>
-        {/* Watermark overlay for preview */}
         {!isPaid && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <span className="font-display text-[10px] tracking-[6px] text-white/10 rotate-12 uppercase">Preview Only</span>
           </div>
         )}
-        {/* Status badge */}
         <div className="absolute top-3 left-3">
           {isPaid ? (
             <span className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full bg-[#00e57a] text-black">
@@ -136,11 +131,9 @@ function ProjectCard({ project, onClick, onDelete, isAdmin }: { project: Project
             </span>
           )}
         </div>
-        {/* Duration */}
         <div className="absolute bottom-3 right-3 px-2 py-1 bg-black/70 backdrop-blur-sm text-white text-xs font-mono rounded-lg">
           {project.duration}m
         </div>
-        {/* Admin delete */}
         {isAdmin && onDelete && (
           <button
             className="absolute top-3 right-3 w-8 h-8 bg-black/70 backdrop-blur-sm rounded-lg flex items-center justify-center text-white/50 hover:text-white hover:bg-[#ff3b5c] transition-all opacity-0 group-hover:opacity-100"
@@ -151,7 +144,6 @@ function ProjectCard({ project, onClick, onDelete, isAdmin }: { project: Project
         )}
       </div>
 
-      {/* Content */}
       <div className="p-5">
         {isAdmin && (
           <div className="flex items-center gap-1.5 mb-2">
@@ -177,7 +169,7 @@ function ProjectCard({ project, onClick, onDelete, isAdmin }: { project: Project
 /* ─── MAIN DASHBOARD ─── */
 export default function Dashboard() {
   const [_, setLocation] = useLocation();
-  const { currentUser, logout, projects, users, addProject, addUser, updateProject, deleteProject, deleteUser, isProductionMode, firebaseReady, firebaseConfig } = useApp();
+  const { currentUser, logout, projects, users, addProject, addUser, updateProject, deleteProject, deleteUser, firebaseReady, firebaseConfig } = useApp();
   const { toast } = useToast();
 
   const [isAddProjectOpen, setIsAddProjectOpen] = useState(false);
@@ -185,7 +177,6 @@ export default function Dashboard() {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
-
   const [paymentMethod, setPaymentMethod] = useState<string | null>("upi");
 
   const clientUsers = users.filter(u => u.role === "client");
@@ -224,39 +215,52 @@ export default function Dashboard() {
   };
 
   const handlePayNow = () => {
-    // Always read from env var directly — firebaseConfig in localStorage may be stale
-    const rzpKey = import.meta.env.VITE_RAZORPAY_KEY || firebaseConfig?.razorpayKey;
-    // Use real Razorpay if key is configured
-    if (rzpKey && selectedProject && typeof window.Razorpay !== "undefined") {
-      const rzp = new window.Razorpay({
-        key: rzpKey,
-        amount: selectedProject.price * 100, // paise
-        currency: "INR",
-        name: "CutStudio Pro",
-        description: selectedProject.title,
-        handler: (response) => {
-          setIsPaymentOpen(false);
-          handleMarkPaid(selectedProject);
-          toast({
-            title: "Payment Successful! 🎉",
-            description: `Payment ID: ${response.razorpay_payment_id}`,
-            className: "bg-[#0a0a16] border-[#00e57a] text-white",
-          });
-        },
-        prefill: { name: currentUser?.name, email: currentUser?.email },
-        theme: { color: "#e8a020" },
-        modal: { ondismiss: () => {} },
-      });
-      rzp.open();
-    } else {
-      // Razorpay not configured or not loaded
-      toast({
-        variant: "destructive",
-        title: "Payment Error",
-        description: "Razorpay is not configured. Please contact support.",
-        className: "bg-[#0a0a16] border-[#ff3b5c] text-white",
-      });
+    // Read key from env var (baked at build time) — works for both test and live keys
+    const rzpKey = import.meta.env.VITE_RAZORPAY_KEY || firebaseConfig?.razorpayKey || "";
+
+    if (!rzpKey) {
+      toast({ variant: "destructive", title: "Payment Not Configured", description: "Razorpay key missing. Contact support.", className: "bg-[#0a0a16] border-[#ff3b5c] text-white" });
+      return;
     }
+
+    if (!selectedProject) return;
+
+    if (typeof window.Razorpay === "undefined") {
+      toast({ variant: "destructive", title: "Payment Error", description: "Razorpay failed to load. Please refresh and try again.", className: "bg-[#0a0a16] border-[#ff3b5c] text-white" });
+      return;
+    }
+
+    setIsPaymentOpen(false);
+
+    const rzp = new window.Razorpay({
+      key: rzpKey,
+      amount: selectedProject.price * 100, // paise
+      currency: "INR",
+      name: "CutStudio Pro",
+      description: selectedProject.title,
+      image: "https://xyric27.github.io/cutstudio-pro/favicon.svg",
+      handler: (response: any) => {
+        handleMarkPaid(selectedProject);
+        toast({
+          title: "Payment Successful! 🎉",
+          description: `Payment ID: ${response.razorpay_payment_id}`,
+          className: "bg-[#0a0a16] border-[#00e57a] text-white",
+        });
+      },
+      prefill: {
+        name: currentUser?.name || "",
+        email: currentUser?.email || "",
+        contact: currentUser?.phone || "",
+      },
+      theme: { color: "#e8a020" },
+      modal: {
+        ondismiss: () => {},
+        escape: true,
+        animation: true,
+      },
+    });
+
+    rzp.open();
   };
 
   const handleDeleteProject = (id: string, e: React.MouseEvent) => {
@@ -287,22 +291,15 @@ export default function Dashboard() {
         <div className="flex items-center gap-3">
           {isAdmin && (
             <div className="hidden md:flex items-center gap-2">
-              <button
-                onClick={() => setIsAddClientOpen(true)}
-                className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-[#1f1f2e] bg-[#0a0a16] text-white text-xs font-semibold hover:border-[#00e5dc]/30 hover:bg-[#00e5dc]/5 hover:text-[#00e5dc] transition-all"
-              >
+              <button onClick={() => setIsAddClientOpen(true)} className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-[#1f1f2e] bg-[#0a0a16] text-white text-xs font-semibold hover:border-[#00e5dc]/30 hover:bg-[#00e5dc]/5 hover:text-[#00e5dc] transition-all">
                 <Plus className="w-3.5 h-3.5" /> Add Client
               </button>
-              <button
-                onClick={() => setIsAddProjectOpen(true)}
-                className="btn-gold flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-bold relative overflow-hidden"
-              >
+              <button onClick={() => setIsAddProjectOpen(true)} className="btn-gold flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-bold relative overflow-hidden">
                 <span className="flex items-center gap-1.5 relative z-10"><Plus className="w-3.5 h-3.5" /> New Project</span>
               </button>
             </div>
           )}
 
-          {/* Firebase / Demo status pill */}
           <div className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold ${firebaseReady ? "bg-[#00e57a]/8 border-[#00e57a]/20 text-[#00e57a]" : "bg-[#1f1f2e] border-[#2a2a3a] text-[#505060]"}`}>
             {firebaseReady ? <><Flame className="w-3 h-3" /> Firebase Live</> : <><WifiOff className="w-3 h-3" /> Demo Mode</>}
           </div>
@@ -325,18 +322,16 @@ export default function Dashboard() {
 
       <div className="max-w-7xl mx-auto px-5 md:px-8 py-8">
 
-        {/* ─── ADMIN STATS ─── */}
         {isAdmin && (
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-            <StatCard label="Total Projects" value={String(projects.length)} icon={Layers} color="#e8a020" trend="+12%" />
+            <StatCard label="Total Projects" value={String(projects.length)} icon={Layers} color="#e8a020" />
             <StatCard label="Clients" value={String(clientUsers.length)} icon={Users} color="#00e5dc" />
             <StatCard label="Paid" value={String(paidProjects.length)} icon={CheckCircle2} color="#00e57a" sub={`${projects.length > 0 ? Math.round(paidProjects.length / projects.length * 100) : 0}% conversion`} />
-            <StatCard label="Revenue" value={formatRupee(totalRevenue)} icon={Wallet} color="#e8a020" trend="+8%" />
+            <StatCard label="Revenue" value={formatRupee(totalRevenue)} icon={Wallet} color="#e8a020" />
             <StatCard label="Pending" value={String(pendingProjects.length)} icon={Clock} color="#ff3b5c" sub="awaiting payment" />
           </div>
         )}
 
-        {/* ─── CLIENT WELCOME ─── */}
         {!isAdmin && (
           <div className="flex items-center justify-between mb-8">
             <div>
@@ -361,7 +356,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ─── ADMIN TABS ─── */}
         {isAdmin ? (
           <Tabs defaultValue="projects">
             <div className="flex items-center justify-between mb-5">
@@ -373,7 +367,6 @@ export default function Dashboard() {
                   <Users className="w-4 h-4 mr-1.5 inline-block" />Clients ({clientUsers.length})
                 </TabsTrigger>
               </TabsList>
-              {/* Mobile add buttons */}
               <div className="flex md:hidden items-center gap-2">
                 <button onClick={() => setIsAddClientOpen(true)} className="w-8 h-8 rounded-lg border border-[#1f1f2e] bg-[#0a0a16] flex items-center justify-center text-[#00e5dc]"><Users className="w-4 h-4" /></button>
                 <button onClick={() => setIsAddProjectOpen(true)} className="btn-gold w-8 h-8 rounded-lg flex items-center justify-center relative overflow-hidden"><span className="relative z-10"><Plus className="w-4 h-4" /></span></button>
@@ -397,7 +390,6 @@ export default function Dashboard() {
             </TabsContent>
           </Tabs>
         ) : (
-          /* ─── CLIENT VIEW ─── */
           displayProjects.length === 0 ? (
             <EmptyState isAdmin={false} />
           ) : (
@@ -420,7 +412,6 @@ export default function Dashboard() {
               <p className="text-[#606070] text-sm">Fill in the project details and assign it to a client.</p>
             </DialogHeader>
             <form onSubmit={handleAddProject} className="space-y-4">
-              {/* Client Select — full width, prominent */}
               <div className="space-y-1.5">
                 <Label className="text-[#a0a0b0] text-xs uppercase tracking-widest font-semibold">Assign to Client <span className="text-[#ff3b5c]">*</span></Label>
                 <ClientSelect clients={clientUsers} value={newProject.clientEmail || ""} onChange={email => setNewProject(p => ({ ...p, clientEmail: email }))} />
@@ -430,7 +421,6 @@ export default function Dashboard() {
                   </p>
                 )}
               </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label className="text-[#a0a0b0] text-xs uppercase tracking-widest font-semibold">Project Title</Label>
@@ -510,7 +500,6 @@ export default function Dashboard() {
         <DialogContent className="bg-[#0a0a16] border-[#1f1f2e] text-white max-w-4xl p-0 overflow-hidden">
           {selectedProject && (
             <>
-              {/* Video area */}
               <div className="relative aspect-video bg-black">
                 {selectedProject.status === "preview" ? (
                   <>
@@ -525,7 +514,6 @@ export default function Dashboard() {
               </div>
 
               <div className="p-6 md:p-8 grid md:grid-cols-[1fr_280px] gap-6">
-                {/* Left */}
                 <div className="space-y-4">
                   <div className="flex items-center gap-2.5">
                     <span className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full ${selectedProject.status === "paid" ? "bg-[#00e57a]/15 text-[#00e57a] border border-[#00e57a]/25" : "bg-[#e8a020]/15 text-[#e8a020] border border-[#e8a020]/25"}`}>
@@ -542,7 +530,6 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* Right — payment panel */}
                 <div className="bg-[#05050d] rounded-2xl border border-[#1f1f2e] p-5 flex flex-col gap-4">
                   <div>
                     <p className="text-[#606070] text-xs uppercase tracking-wider font-semibold mb-1">Project Value</p>
@@ -566,7 +553,7 @@ export default function Dashboard() {
                         <span>Watermark active until payment cleared.</span>
                       </div>
                       {!isAdmin ? (
-                        <button className="btn-gold w-full h-12 rounded-xl font-bold text-base relative overflow-hidden shadow-[0_0_24px_rgba(232,160,32,0.35)]" onClick={() => setIsPaymentOpen(true)}>
+                        <button className="btn-gold w-full h-12 rounded-xl font-bold text-base relative overflow-hidden shadow-[0_0_24px_rgba(232,160,32,0.35)]" onClick={handlePayNow}>
                           <span className="relative z-10 flex items-center justify-center gap-2"><IndianRupee className="w-4 h-4" /> {hasRazorpay ? "Pay via Razorpay" : "Pay Now to Unlock"}</span>
                         </button>
                       ) : (
@@ -580,57 +567,6 @@ export default function Dashboard() {
               </div>
             </>
           )}
-        </DialogContent>
-      </Dialog>
-
-      {/* ─── PAYMENT MODAL ─── */}
-      <Dialog open={isPaymentOpen} onOpenChange={setIsPaymentOpen}>
-        <DialogContent className="bg-[#0a0a16] border-[#1f1f2e] text-white sm:max-w-sm p-0 overflow-hidden">
-          <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-[#e8a020]/60 to-transparent" />
-          <div className="p-6">
-            <DialogHeader className="mb-5">
-              <DialogTitle className="font-display text-3xl">Pay Securely</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-                <div className="bg-[#05050d] rounded-xl border border-[#1f1f2e] p-4 flex justify-between items-center">
-                  <div>
-                    <p className="text-[#606070] text-xs uppercase tracking-wider font-semibold mb-0.5">Amount Due</p>
-                    <p className="font-mono text-2xl font-bold text-[#e8a020]">{selectedProject ? formatRupee(selectedProject.price) : "₹0"}</p>
-                  </div>
-                  <div className="w-10 h-10 rounded-xl bg-[#e8a020]/10 border border-[#e8a020]/20 flex items-center justify-center">
-                    <Wallet className="w-5 h-5 text-[#e8a020]" />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  {[
-                    { icon: Zap, label: "UPI / QR Code", color: "#e8a020", id: "upi" },
-                    { icon: CreditCard, label: "Credit / Debit Card", color: "#00e5dc", id: "card" },
-                    { icon: IndianRupee, label: "Net Banking", color: "#e040a0", id: "netbanking" },
-                  ].map(m => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      className={`w-full flex items-center gap-3 h-13 px-4 py-3.5 rounded-xl border transition-all ${paymentMethod === m.id ? "border-[#e8a020]/50 bg-[#e8a020]/5" : "border-[#1f1f2e] bg-[#05050d] hover:border-[#1f1f2e] hover:bg-[#1f1f2e]"}`}
-                      onClick={() => setPaymentMethod(m.id)}
-                    >
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: `${m.color}15`, border: `1px solid ${m.color}22` }}>
-                        <m.icon className="w-4 h-4" style={{ color: m.color }} />
-                      </div>
-                      <span className="text-white font-semibold text-sm">{m.label}</span>
-                      {paymentMethod === m.id && <Check className="w-4 h-4 text-[#e8a020] ml-auto" />}
-                    </button>
-                  ))}
-                </div>
-
-                <button className="btn-gold w-full h-12 rounded-xl font-bold relative overflow-hidden" onClick={handlePayNow}>
-                  <span className="relative z-10 flex items-center justify-center gap-2">Pay Now <ArrowUpRight className="w-4 h-4" /></span>
-                </button>
-                <p className="text-center text-[#404050] text-xs flex items-center justify-center gap-1.5">
-                  <Shield className="w-3 h-3" /> Secured by Razorpay · 256-bit SSL
-                </p>
-              </div>
-          </div>
         </DialogContent>
       </Dialog>
     </div>
@@ -686,7 +622,7 @@ function ClientsTable({ clients, projects, onDelete, onAddProject }: { clients: 
                       <div className="text-[#505060] text-xs">/ {cp.length} total</div>
                       {cp.length > 0 && (
                         <div className="h-1.5 w-16 rounded-full bg-[#1f1f2e] overflow-hidden">
-                          <div className="h-full rounded-full bg-[#00e57a]" style={{ width: `${cp.length > 0 ? (paid.length / cp.length) * 100 : 0}%` }} />
+                          <div className="h-full rounded-full bg-[#00e57a]" style={{ width: `${(paid.length / cp.length) * 100}%` }} />
                         </div>
                       )}
                     </div>
@@ -694,21 +630,15 @@ function ClientsTable({ clients, projects, onDelete, onAddProject }: { clients: 
                   <td className="px-6 py-4 font-mono font-bold text-[#e8a020]">{rev > 0 ? formatRupee(rev) : <span className="text-[#404050]">—</span>}</td>
                   <td className="px-6 py-4">
                     <span className="flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full w-fit bg-[#00e57a]/10 text-[#00e57a] border border-[#00e57a]/20">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#00e57a] status-live" /> Active
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#00e57a]" /> Active
                     </span>
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2 justify-end">
-                      <button
-                        className="flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-[#1f1f2e] text-[#e8a020] text-xs font-semibold hover:bg-[#e8a020]/10 hover:border-[#e8a020]/30 transition-all whitespace-nowrap"
-                        onClick={() => onAddProject(c.email)}
-                      >
+                      <button className="flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-[#1f1f2e] text-[#e8a020] text-xs font-semibold hover:bg-[#e8a020]/10 hover:border-[#e8a020]/30 transition-all whitespace-nowrap" onClick={() => onAddProject(c.email)}>
                         <Plus className="w-3 h-3" /> Project
                       </button>
-                      <button
-                        className="w-7 h-7 rounded-lg flex items-center justify-center text-[#505060] hover:text-[#ff3b5c] hover:bg-[#ff3b5c]/10 transition-all"
-                        onClick={() => onDelete(c.uid)}
-                      >
+                      <button className="w-7 h-7 rounded-lg flex items-center justify-center text-[#505060] hover:text-[#ff3b5c] hover:bg-[#ff3b5c]/10 transition-all" onClick={() => onDelete(c.uid)}>
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
