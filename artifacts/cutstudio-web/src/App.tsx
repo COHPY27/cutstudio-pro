@@ -2,7 +2,7 @@ import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppProvider, useApp } from "@/lib/store";
-import { SetupWizard } from "@/components/SetupWizard"; // NEW: Import setup wizard
+import { SetupWizard } from "@/components/ui/SetupWizard"; // NEW: Import setup wizard
 import NotFound from "@/pages/not-found";
 import LoadingScreen from "@/pages/loading";
 import Home from "@/pages/home";
