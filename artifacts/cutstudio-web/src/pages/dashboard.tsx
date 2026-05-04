@@ -300,9 +300,9 @@ export default function Dashboard() {
       key: rzpKey,
       amount: amountInPaise,
       currency: "INR",
-      name: "CutStudio Pro",
+      name: "Meet Your Edits Pro",
       description: selectedProject?.title || "Video Editing Service",
-      image: "https://xyric27.github.io/cutstudio-pro/favicon.svg",
+      image: "https://xyric27.github.io/Meet Your Edits/favicon.svg",
       
       handler: function (response: any) {
         console.log("✅ Payment Success:", response);
