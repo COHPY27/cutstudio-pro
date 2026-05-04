@@ -20,10 +20,9 @@ function ProtectedRoute({ component: Component, ...rest }: any) {
 function Router() {
   const { isLoading, isSetupMode, currentUser, firebaseReady } = useApp();
 
-  // Loading state
   if (isLoading || !firebaseReady) return <LoadingScreen />;
 
-  // Setup mode: No users exist
+  // Setup mode: No users yet
   if (isSetupMode && !currentUser) {
     return (
       <Switch>
@@ -38,7 +37,7 @@ function Router() {
     );
   }
 
-  // Normal mode: Users exist
+  // Normal mode
   return (
     <Switch>
       <Route path="/home" component={Home} />
@@ -55,7 +54,6 @@ function Router() {
 
       <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} />} />
       
-      {/* Root URL: Smart redirect */}
       <Route path="/">
         {currentUser ? <Redirect to="/dashboard" /> : <Redirect to="/login" />}
       </Route>
@@ -66,26 +64,22 @@ function Router() {
 }
 
 function App() {
-  // Safe base path with fallback
-  const getBasePath = () => {
-    try {
-      const bp = import.meta.env.BASE_PATH || '';
-      return bp.replace(/\/$/, '') || '';
-    } catch {
-      return '';
-    }
-  };
-
+  // Simple base path
+  const basePath = ''; 
+  
   return (
     <AppProvider>
       <TooltipProvider>
-        <WouterRouter base={getBasePath()}>
+        <WouterRouter base={basePath}>
+          {/* Background effects */}
           <div className="noise-overlay" />
           <div className="orb orb-1" />
           <div className="orb orb-2" />
           <div className="orb orb-3" />
+          
           <Router />
         </WouterRouter>
+        
         <Toaster />
       </TooltipProvider>
     </AppProvider>
