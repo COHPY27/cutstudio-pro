@@ -21,29 +21,37 @@ function ProtectedRoute({ component: Component, ...rest }: any) {
 function AppContent() {
   const { currentUser, isLoading, isSetupMode } = useApp();
 
-  // ✅ KEY: Jab tak load ho raha, tab tak LOADING SCREEN DIKHAO
+  // ✅ LOADING STATE - LoadingScreen dikhao
   if (isLoading) {
-    return <LoadingScreen />;
+    return (
+      <div style={{ minHeight: '100vh', position: 'relative', zIndex: 9999 }}>
+        <LoadingScreen />
+      </div>
+    );
   }
 
-  // ✅ Loading complete - ab route decide karo
+  // ✅ NOT LOADING - Actual content dikhao
+  console.log("🎯 Rendering app content - User:", currentUser?.email || "None", "Setup:", isSetupMode);
+  
   return (
-    <Switch>
-      <Route path="/">
-        {isSetupMode ? (
-          <Redirect to="/setup" />
-        ) : currentUser ? (
-          <Redirect to="/dashboard" />
-        ) : (
-          <Redirect to="/home" />
-        )}
-      </Route>
-      
-      <Route path="/home" component={Home} />
-      <Route path="/login" component={Login} />
-      <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} />} />
-      <Route component={NotFound} />
-    </Switch>
+    <div style={{ minHeight: '100vh', position: 'relative', zIndex: 1 }}>
+      <Switch>
+        <Route path="/">
+          {isSetupMode ? (
+            <Redirect to="/setup" />
+          ) : currentUser ? (
+            <Redirect to="/dashboard" />
+          ) : (
+            <Redirect to="/home" />
+          )}
+        </Route>
+        
+        <Route path="/home" component={Home} />
+        <Route path="/login" component={Login} />
+        <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} />} />
+        <Route component={NotFound} />
+      </Switch>
+    </div>
   );
 }
 
@@ -52,13 +60,13 @@ function App() {
     <AppProvider>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          {/* Background effects - always visible */}
-          <div className="noise-overlay" />
-          <div className="orb orb-1" />
-          <div className="orb orb-2" />
-          <div className="orb orb-3" />
+          {/* ✅ Background effects - z-index ensure kiya */}
+          <div className="noise-overlay" style={{ position: 'fixed', zIndex: 0 }} />
+          <div className="orb orb-1" style={{ position: 'fixed', zIndex: 0 }} />
+          <div className="orb orb-2" style={{ position: 'fixed', zIndex: 0 }} />
+          <div className="orb orb-3" style={{ position: 'fixed', zIndex: 0 }} />
           
-          {/* Content switches between Loading and App */}
+          {/* ✅ Content layer */}
           <AppContent />
         </WouterRouter>
         <Toaster />
